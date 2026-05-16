@@ -8243,6 +8243,8 @@ MonoBehaviour:
   gravity: -9.81
   mouseSensitivity: 0.5
   cameraTransform: {fileID: 1372618692}
+  bobSpeed: 8
+  bobAmount: 0.2
 --- !u!136 &1026130343
 CapsuleCollider:
   m_ObjectHideFlags: 0
