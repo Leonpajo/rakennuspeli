@@ -25,9 +25,10 @@ public class PlayerController : MonoBehaviour
     public float bobAmount = 0.035f;
 
     [Header("Item Carry")]
-    public Transform holdPoint;
     public float pickupRange = 3f;
     public float throwForce = 8f;
+    public float holdDistance = 1.5f;
+    public float holdSmoothSpeed = 20f;
 
     private CharacterController controller;
     private Vector3 velocity;
@@ -35,6 +36,7 @@ public class PlayerController : MonoBehaviour
 
     private float lastGroundedTime;
     private float lastJumpTime;
+    public float cartCarrySpeed = 2.5f;
 
     private Vector3 cameraStartPos;
 
@@ -85,8 +87,20 @@ public class PlayerController : MonoBehaviour
         if (keyboard.wKey.isPressed) z = 1f;
         if (keyboard.sKey.isPressed) z = -1f;
 
-        float currentSpeed =
-            keyboard.leftShiftKey.isPressed ? sprintSpeed : moveSpeed;
+        bool holdingCart =
+            heldItem != null && heldItem.CompareTag("Cart");
+
+        float currentSpeed;
+
+        if (holdingCart)
+        {
+            currentSpeed = cartCarrySpeed;
+        }
+        else
+        {
+            currentSpeed =
+                keyboard.leftShiftKey.isPressed ? sprintSpeed : moveSpeed;
+        }
 
         Vector3 move = transform.right * x + transform.forward * z;
 
@@ -97,16 +111,11 @@ public class PlayerController : MonoBehaviour
             lastGroundedTime = Time.time;
 
             if (velocity.y < 0)
-            {
                 velocity.y = -2f;
-            }
         }
 
-        bool canJump =
-            Time.time <= lastGroundedTime + coyoteTime;
-
-        bool jumpCooldownFinished =
-            Time.time >= lastJumpTime + jumpCooldown;
+        bool canJump = Time.time <= lastGroundedTime + coyoteTime;
+        bool jumpCooldownFinished = Time.time >= lastJumpTime + jumpCooldown;
 
         if (
             keyboard.spaceKey.wasPressedThisFrame &&
@@ -137,15 +146,11 @@ public class PlayerController : MonoBehaviour
 
         if (isMoving && controller.isGrounded)
         {
-            float currentBobSpeed =
-                isRunning ? bobSpeed * 1.6f : bobSpeed;
-
-            float currentBobAmount =
-                isRunning ? bobAmount * 1.8f : bobAmount;
+            float currentBobSpeed = isRunning ? bobSpeed * 1.6f : bobSpeed;
+            float currentBobAmount = isRunning ? bobAmount * 1.8f : bobAmount;
 
             float bobOffset =
-                Mathf.Sin(Time.time * currentBobSpeed)
-                * currentBobAmount;
+                Mathf.Sin(Time.time * currentBobSpeed) * currentBobAmount;
 
             float swayOffset =
                 Mathf.Cos(Time.time * currentBobSpeed * 0.5f)
@@ -178,23 +183,59 @@ public class PlayerController : MonoBehaviour
         if (Keyboard.current.eKey.wasPressedThisFrame)
         {
             if (heldItem == null)
-            {
                 TryPickup();
-            }
             else
-            {
                 DropItem();
-            }
         }
 
         if (heldItem != null)
         {
-            heldItem.MovePosition(holdPoint.position);
-            heldItem.MoveRotation(holdPoint.rotation);
+            bool holdingCart = heldItem.CompareTag("Cart");
 
-            if (Mouse.current.leftButton.wasPressedThisFrame)
+            Vector3 targetPosition;
+
+            if (holdingCart)
             {
-                ThrowItem();
+                Vector3 forwardFlat = cameraTransform.forward;
+                forwardFlat.y = 0f;
+                forwardFlat.Normalize();
+
+                targetPosition =
+                    cameraTransform.position + forwardFlat * holdDistance;
+
+                targetPosition.y = heldItem.position.y;
+            }
+            else
+            {
+                targetPosition =
+                    cameraTransform.position +
+                    cameraTransform.forward * holdDistance;
+            }
+
+            heldItem.MovePosition(Vector3.Lerp(
+                heldItem.position,
+                targetPosition,
+                Time.deltaTime * holdSmoothSpeed
+            ));
+
+            if (holdingCart)
+            {
+                Vector3 forwardFlat = cameraTransform.forward;
+                forwardFlat.y = 0f;
+                forwardFlat.Normalize();
+
+                targetPosition =
+                    cameraTransform.position + forwardFlat * (holdDistance + 10f);
+
+                targetPosition.y = heldItem.position.y;
+
+                Quaternion flatRotation = Quaternion.Euler(
+                    0f,
+                    cameraTransform.eulerAngles.y + 180f,
+                    0f
+                );
+
+                heldItem.MoveRotation(flatRotation);
             }
         }
     }
@@ -210,15 +251,28 @@ public class PlayerController : MonoBehaviour
         {
             Rigidbody rb = hit.collider.GetComponent<Rigidbody>();
 
-            if (rb != null)
-            {
-                heldItem = rb;
-                heldCollider = hit.collider;
+            if (rb == null) return;
 
-                heldItem.useGravity = false;
+            bool canCarry =
+                hit.collider.GetComponent<FoodItem>() != null ||
+                hit.collider.CompareTag("Potion") ||
+                hit.collider.CompareTag("Cart");
+
+            if (!canCarry) return;
+
+            heldItem = rb;
+            heldCollider = hit.collider;
+
+            heldItem.useGravity = false;
+
+            if (!heldItem.isKinematic)
+            {
                 heldItem.linearVelocity = Vector3.zero;
                 heldItem.angularVelocity = Vector3.zero;
+            }
 
+            if (heldCollider != null)
+            {
                 heldCollider.enabled = false;
             }
         }
@@ -243,11 +297,16 @@ public class PlayerController : MonoBehaviour
     {
         Rigidbody item = heldItem;
 
+        bool wasCart = item.CompareTag("Cart");
+
         DropItem();
 
-        item.AddForce(
-            cameraTransform.forward * throwForce,
-            ForceMode.Impulse
-        );
+        if (!wasCart)
+        {
+            item.AddForce(
+                cameraTransform.forward * throwForce,
+                ForceMode.Impulse
+            );
+        }
     }
 }
