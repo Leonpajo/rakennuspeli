@@ -12,6 +12,10 @@ public class PlayerController : MonoBehaviour
     public float jumpHeight = 2f;
     public float gravity = -9.81f;
 
+    [Header("Jump Feel")]
+    public float coyoteTime = 0.75f;
+    public float jumpCooldown = 0.75f;
+
     [Header("Mouse Look")]
     public float mouseSensitivity = 0.15f;
     public Transform cameraTransform;
@@ -20,11 +24,22 @@ public class PlayerController : MonoBehaviour
     public float bobSpeed = 10f;
     public float bobAmount = 0.035f;
 
+    [Header("Item Carry")]
+    public Transform holdPoint;
+    public float pickupRange = 3f;
+    public float throwForce = 8f;
+
     private CharacterController controller;
     private Vector3 velocity;
     private float xRotation;
 
+    private float lastGroundedTime;
+    private float lastJumpTime;
+
     private Vector3 cameraStartPos;
+
+    private Rigidbody heldItem;
+    private Collider heldCollider;
 
     void Start()
     {
@@ -41,6 +56,7 @@ public class PlayerController : MonoBehaviour
         Look();
         Move();
         HeadBob();
+        CarryItems();
     }
 
     void Look()
@@ -54,7 +70,6 @@ public class PlayerController : MonoBehaviour
         xRotation = Mathf.Clamp(xRotation, -90f, 90f);
 
         cameraTransform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
-
         transform.Rotate(Vector3.up * mouseX);
     }
 
@@ -77,14 +92,30 @@ public class PlayerController : MonoBehaviour
 
         controller.Move(move.normalized * currentSpeed * Time.deltaTime);
 
-        if (controller.isGrounded && velocity.y < 0)
+        if (controller.isGrounded)
         {
-            velocity.y = -2f;
+            lastGroundedTime = Time.time;
+
+            if (velocity.y < 0)
+            {
+                velocity.y = -2f;
+            }
         }
 
-        if (keyboard.spaceKey.wasPressedThisFrame && controller.isGrounded)
+        bool canJump =
+            Time.time <= lastGroundedTime + coyoteTime;
+
+        bool jumpCooldownFinished =
+            Time.time >= lastJumpTime + jumpCooldown;
+
+        if (
+            keyboard.spaceKey.wasPressedThisFrame &&
+            canJump &&
+            jumpCooldownFinished
+        )
         {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            lastJumpTime = Time.time;
         }
 
         velocity.y += gravity * Time.deltaTime;
@@ -140,5 +171,83 @@ public class PlayerController : MonoBehaviour
                 Time.deltaTime * 8f
             );
         }
+    }
+
+    void CarryItems()
+    {
+        if (Keyboard.current.eKey.wasPressedThisFrame)
+        {
+            if (heldItem == null)
+            {
+                TryPickup();
+            }
+            else
+            {
+                DropItem();
+            }
+        }
+
+        if (heldItem != null)
+        {
+            heldItem.MovePosition(holdPoint.position);
+            heldItem.MoveRotation(holdPoint.rotation);
+
+            if (Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                ThrowItem();
+            }
+        }
+    }
+
+    void TryPickup()
+    {
+        if (Physics.Raycast(
+            cameraTransform.position,
+            cameraTransform.forward,
+            out RaycastHit hit,
+            pickupRange
+        ))
+        {
+            Rigidbody rb = hit.collider.GetComponent<Rigidbody>();
+
+            if (rb != null)
+            {
+                heldItem = rb;
+                heldCollider = hit.collider;
+
+                heldItem.useGravity = false;
+                heldItem.linearVelocity = Vector3.zero;
+                heldItem.angularVelocity = Vector3.zero;
+
+                heldCollider.enabled = false;
+            }
+        }
+    }
+
+    void DropItem()
+    {
+        if (heldItem == null) return;
+
+        heldItem.useGravity = true;
+
+        if (heldCollider != null)
+        {
+            heldCollider.enabled = true;
+        }
+
+        heldItem = null;
+        heldCollider = null;
+    }
+
+    void ThrowItem()
+    {
+        Rigidbody item = heldItem;
+
+        DropItem();
+
+        item.AddForce(
+            cameraTransform.forward * throwForce,
+            ForceMode.Impulse
+        );
     }
 }
